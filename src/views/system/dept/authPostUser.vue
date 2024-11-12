@@ -1,0 +1,336 @@
+<template>
+  <div class="app-container">
+    <div class="appo">
+      <div class="appi">
+        <div class="appc">
+          <!-- <div class="top">人员配置</div> -->
+          <NavTop :val="['人员管理', '珠荣公司组织架构图', '人员配置']" />
+          <div class="main">
+            <el-form
+              :model="queryParams"
+              ref="queryForm"
+              size="small"
+              :inline="true"
+              v-show="showSearch"
+            >
+              <el-form-item label="名称" prop="userName">
+                <el-input
+                  v-model="queryParams.userName"
+                  placeholder="请输入名称"
+                  clearable
+                  style="width: 240px"
+                  @keyup.enter.native="handleQuery"
+                />
+              </el-form-item>
+              <el-form-item label="手机号码" prop="phonenumber">
+                <el-input
+                  v-model="queryParams.phonenumber"
+                  placeholder="请输入号码"
+                  clearable
+                  style="width: 240px"
+                  @keyup.enter.native="handleQuery"
+                />
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" size="mini" @click="handleQuery">搜索</el-button>
+                <el-button style="background: #f3f4f8" size="mini" @click="resetQuery"
+                  >重置</el-button
+                >
+              </el-form-item>
+            </el-form>
+
+            <el-row :gutter="10" class="mb8">
+              <el-col :span="1.5">
+                <el-button
+                  type="primary"
+                  size="mini"
+                  @click="openSelectUser"
+                  v-hasPermi="['system:user:list']"
+                  >选择人员</el-button
+                >
+              </el-col>
+              <el-col :span="1.5">
+                <el-button
+                  type="danger"
+                  style="width: 120px"
+                  size="mini"
+                  :disabled="multiple"
+                  @click="cancelAuthUserAll"
+                  v-hasPermi="['system:role:edit']"
+                  >批量取消配置</el-button
+                >
+              </el-col>
+              <el-col :span="1.5">
+                <el-button type="warning" size="mini" @click="handleClose">关闭</el-button>
+              </el-col>
+              <right-toolbar :showSearch.sync="showSearch" @queryTable="getList"></right-toolbar>
+            </el-row>
+
+            <el-table
+              v-loading="loading"
+              :data="userList"
+              @selection-change="handleSelectionChange"
+            >
+              <el-table-column type="selection" width="55" align="center" />
+              <el-table-column label="登录账号" prop="nickName" :show-overflow-tooltip="true" />
+              <el-table-column label="账号名称" prop="userName" :show-overflow-tooltip="true" />
+              <el-table-column label="邮箱" prop="email" :show-overflow-tooltip="true" />
+              <el-table-column label="手机" prop="phonenumber" :show-overflow-tooltip="true" />
+              <el-table-column label="状态" align="center" prop="jobState">
+                <template slot-scope="scope">
+                  <dict-tag
+                    :flag="false"
+                    :options="dict.type.user_job_status"
+                    :value="scope.row.userInfo && scope.row.userInfo.jobState"
+                  />
+                </template>
+              </el-table-column>
+              <el-table-column label="创建时间" align="center" prop="createTime" width="180">
+                <template slot-scope="scope">
+                  <span>{{ parseTime(scope.row.createTime) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" align="center" class-name="small-padding fixed-width">
+                <template slot-scope="scope">
+                  <el-button
+                    size="mini"
+                    type="text"
+                    icon="el-icon-circle-close"
+                    @click="cancelAuthUser(scope.row)"
+                    v-hasPermi="['system:role:edit']"
+                    >取消配置</el-button
+                  >
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <pagination
+              v-show="total > 0"
+              :total="total"
+              :page.sync="queryParams.pageNum"
+              :limit.sync="queryParams.pageSize"
+              @pagination="getList"
+            />
+            <select-user ref="select" :postId="queryParams.postId" @ok="handleQuery" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+import { allocatedUserList, authUserCancel, authUserCancelAll } from '@/api/system/post';
+import selectUser from './selectUser';
+
+export default {
+  name: 'AuthPostUser',
+  dicts: ['user_job_status'],
+  components: { selectUser },
+  data() {
+    return {
+      // 遮罩层
+      loading: true,
+      // 选中用户组
+      userIds: [],
+      // 非多个禁用
+      multiple: true,
+      // 显示搜索条件
+      showSearch: true,
+      // 总条数
+      total: 0,
+      // 用户表格数据
+      userList: [],
+      // 查询参数
+      queryParams: {
+        pageNum: 1,
+        pageSize: 10,
+        roleIds: undefined,
+        userName: undefined,
+        phonenumber: undefined,
+        userType: '01',
+        postId: undefined,
+      },
+    };
+  },
+  created() {
+    const postId = this.$route.params && this.$route.params.postId;
+    if (postId) {
+      this.queryParams.postId = postId;
+      this.getList();
+    }
+  },
+  methods: {
+    /** 查询授权用户列表 */
+    getList() {
+      this.loading = true;
+      allocatedUserList(this.queryParams).then((response) => {
+        this.userList = response.rows;
+        this.total = response.total;
+        this.loading = false;
+      });
+    },
+    // 返回按钮
+    handleClose() {
+      //const obj = { path: '/person/dept' };
+      const obj = { path: '/person/dept' };
+      this.$tab.closeOpenPage(obj);
+    },
+    /** 搜索按钮操作 */
+    handleQuery() {
+      this.queryParams.pageNum = 1;
+      this.getList();
+    },
+    /** 重置按钮操作 */
+    resetQuery() {
+      this.resetForm('queryForm');
+      this.handleQuery();
+    },
+    // 多选框选中数据
+    handleSelectionChange(selection) {
+      this.userIds = selection.map((item) => item.userId);
+      this.multiple = !selection.length;
+    },
+    /** 打开授权用户表弹窗 */
+    openSelectUser() {
+      this.$refs.select.show();
+    },
+    /** 取消授权按钮操作 */
+    cancelAuthUser(row) {
+      const postId = this.queryParams.postId;
+      const userId = row.userId;
+      this.$modal
+        .confirm('确认要取消该用户"' + row.userName + '"职位吗？')
+        .then(function () {
+          return authUserCancelAll({ postId: postId, userIds: userId });
+        })
+        .then(() => {
+          this.getList();
+          this.$modal.msgSuccess('取消授权成功');
+        })
+        .catch(() => {});
+    },
+    /** 批量取消授权按钮操作 */
+    cancelAuthUserAll(row) {
+      const postId = this.queryParams.postId;
+      const userIds = this.userIds.join(',');
+      this.$modal
+        .confirm('是否取消选中用户授权数据项？')
+        .then(function () {
+          return authUserCancelAll({ postId: postId, userIds: userIds });
+        })
+        .then(() => {
+          this.getList();
+          this.$modal.msgSuccess('取消授权成功');
+        })
+        .catch(() => {});
+    },
+  },
+};
+</script>
+
+<style lang="scss" scoped>
+.appo {
+  overflow: auto;
+  .appi {
+    //margin: 20px;
+    min-width: 1220px;
+    .appc {
+      .top {
+        font-family: Alibaba PuHuiTi 2;
+        font-size: 20px;
+        font-weight: 500;
+        line-height: 28px;
+        letter-spacing: 0em;
+        text-align: left;
+        margin-bottom: 20px;
+      }
+      .top::before {
+        content: '\00a0 ';
+        border-left: 3px solid #4da0ff;
+        margin-right: 5px;
+      }
+      .main {
+        background: #fff;
+        border-radius: 4px;
+        .el-button {
+          //margin-left: 12px;
+          margin: 11px;
+          width: 100px;
+          border: 0px;
+          height: 35px;
+          font-size: 14px;
+        }
+        .el-form {
+          .el-form-item {
+            width: 245px;
+            height: auto;
+            margin: 15px;
+            margin-bottom: 0px;
+            ::v-deep .el-form-item__label {
+              display: none;
+            }
+
+            ::v-deep .el-input__inner {
+              width: 240px;
+              height: 37px;
+            }
+          }
+          .el-form-item:last-child {
+            margin-top: 4px;
+          }
+        }
+
+        .el-row {
+          margin: 0 0px !important;
+          .top-right-btn {
+            display: none; //管理员额外菜单隐藏
+            margin-top: 20px !important;
+          }
+        }
+
+        .el-table {
+          margin: 15px;
+          width: 98%;
+          .el-button {
+            //margin-left: 12px;
+            margin: 11px;
+            width: auto;
+            height: auto;
+            border: 0px;
+            font-size: 14px;
+          }
+        }
+
+        .pagination-container {
+          margin: 15px;
+          margin-top: 20px;
+          text-align: right;
+        }
+
+        ::v-deep el-dialog__wrapper .el-dialog .dialogt {
+          font-size: 30px;
+        }
+      }
+    }
+  }
+}
+.el-dialog__wrapper {
+  //局部弹窗样式修改
+  top: 20px;
+  .el-dialog .dialogt {
+    margin: 10px 10px;
+    height: 20px;
+    font-size: 20px;
+    display: block;
+  }
+  .el-dialog .dialogt::before {
+    content: '\00a0 ';
+    border-left: 3px solid #4da0ff;
+    margin-right: 5px;
+  }
+  .el-form {
+    margin-top: 20px;
+  }
+}
+</style>
